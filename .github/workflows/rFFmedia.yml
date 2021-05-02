@@ -1,0 +1,159 @@
+name: rFFmedia
+on:
+  schedule:
+      - cron: '0 * * * *'
+  workflow_dispatch:
+
+jobs:
+  rFFmedia:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+    - name: Install rClone Beta
+      shell: bash
+      run: |
+        wget -q --ignore-length https://beta.rclone.org/rclone-beta-latest-linux-amd64.zip
+        unzip -q rclone-beta-latest-linux-amd64.zip
+        cd rclone-*-linux-amd64
+        sudo cp rclone /usr/bin/
+        sudo chown root:root /usr/bin/rclone
+        sudo chmod 755 /usr/bin/rclone
+        sudo mkdir -p /usr/local/share/man/man1
+        sudo cp rclone.1 /usr/local/share/man/man1/
+        cd ..
+        rm -rf rclone-*-linux-amd64 rclone-beta-latest-linux-amd64.zip
+
+    - name: Clone GitHub Repo
+      uses: actions/checkout@master
+      with:
+        path: 'rFFmedia'
+
+    - name: Check For Updates
+      shell: bash
+      run: |
+        FFMPEG_VERSION_CURRENT=$(jq .FFmpeg ./rFFmedia/VERSION.json | tr -d '"')
+        FFMPEG_VERSION_LATEST=$(wget --timeout 5 --ignore-length -qO- "https://johnvansickle.com/ffmpeg/release-readme.txt" | sed -n '11p' | sed "s/.*              version: //")
+        MEDIAINFO_VERSION_CURRENT=$(jq .MediaInfo ./rFFmedia/VERSION.json | tr -d '"')
+        MEDIAINFO_VERSION_LATEST=$(rclone --config='' lsf :http: --http-url "https://mediaarea.net/download/binary/mediainfo/" | sort -r --version-sort | head -1 | sed "s|/||")
+        RCLONE_VERSION_CURRENT=$(jq .rClone ./rFFmedia/VERSION.json | tr -d '"')
+        RCLONE_VERSION_LATEST=$(wget --timeout 5 --ignore-length -qO- "https://beta.rclone.org/version.txt" | sed "s/.*rclone v//")
+        CURRENT_BUILD_VERSION=$(jq .rFFmedia ./rFFmedia/VERSION.json | tr -d '"')
+        IFS='.' read -ra CURRENT_BUILD_ARRAY <<< "$CURRENT_BUILD_VERSION"
+        declare -a LATEST_BUILD_ARRAY=()
+        if [ $FFMPEG_VERSION_LATEST != $FFMPEG_VERSION_CURRENT ]
+        then
+          LATEST_BUILD_ARRAY+=($((${CURRENT_BUILD_ARRAY[0]}+1)))
+          LATEST_BUILD_ARRAY+=($(echo "0"))
+          LATEST_BUILD_ARRAY+=($(echo "0"))
+        else
+          LATEST_BUILD_ARRAY+=(${CURRENT_BUILD_ARRAY[0]})
+          if [ $MEDIAINFO_VERSION_LATEST != $MEDIAINFO_VERSION_CURRENT ]
+          then
+            LATEST_BUILD_ARRAY+=($((${CURRENT_BUILD_ARRAY[1]}+1)))
+            LATEST_BUILD_ARRAY+=($(echo "0"))
+          else
+            LATEST_BUILD_ARRAY+=(${CURRENT_BUILD_ARRAY[1]})
+            if [ $RCLONE_VERSION_LATEST != $RCLONE_VERSION_CURRENT ]
+            then
+              LATEST_BUILD_ARRAY+=($((${CURRENT_BUILD_ARRAY[2]}+1)))
+            else
+              LATEST_BUILD_ARRAY+=(${CURRENT_BUILD_ARRAY[2]})
+            fi
+          fi
+        fi
+        LATEST_BUILD_VERSION=$(IFS=. ; echo "${LATEST_BUILD_ARRAY[*]}")
+        echo """FFMPEG_VERSION_CURRENT=$FFMPEG_VERSION_CURRENT""" >> $GITHUB_ENV
+        echo """FFMPEG_VERSION_LATEST=$FFMPEG_VERSION_LATEST""" >> $GITHUB_ENV
+        echo """MEDIAINFO_VERSION_CURRENT=$MEDIAINFO_VERSION_CURRENT""" >> $GITHUB_ENV
+        echo """MEDIAINFO_VERSION_LATEST=$MEDIAINFO_VERSION_LATEST""" >> $GITHUB_ENV
+        echo """RCLONE_VERSION_CURRENT=$RCLONE_VERSION_CURRENT""" >> $GITHUB_ENV
+        echo """RCLONE_VERSION_LATEST=$RCLONE_VERSION_LATEST""" >> $GITHUB_ENV
+        echo """CURRENT_BUILD_VERSION=$CURRENT_BUILD_VERSION""" >> $GITHUB_ENV
+        echo """LATEST_BUILD_VERSION=$LATEST_BUILD_VERSION""" >> $GITHUB_ENV
+
+    - name: Download Updates
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      shell: bash
+      run: |
+        LIBZEN=$(rclone --config='' lsf :http: --http-url 'https://mediaarea.net/download/binary/libzen0/' | sort -r --version-sort | head -1 | sed "s|/||")
+        LIBZEN="https://mediaarea.net/download/binary/libzen0/$LIBZEN/"
+        LIBMEDIAINFO="https://mediaarea.net/download/binary/libmediainfo0/$MEDIAINFO_VERSION_LATEST/"
+        MEDIAINFO="https://mediaarea.net/download/binary/mediainfo/$MEDIAINFO_VERSION_LATEST/"
+        wget -q "https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
+        wget -q "http://archive.ubuntu.com/ubuntu/pool/universe/libm/libmms/libmms0_0.6.4-3_amd64.deb"
+        wget -q $LIBZEN -r --cut-dirs 10 -nH -l1 -np -A "libzen0v5_*_amd64.xUbuntu_18.04.deb"
+        wget -q $LIBMEDIAINFO -r --cut-dirs 10 -nH -l1 -np -A "libmediainfo0v5_*_amd64.xUbuntu_18.04.deb"
+        wget -q $MEDIAINFO -r --cut-dirs 10 -nH -l1 -np -A "mediainfo_*_amd64.xUbuntu_18.04.deb"
+        wget --ignore-length -q "https://beta.rclone.org/rclone-beta-latest-linux-amd64.deb"
+        dpkg -x ./libmms0_*_amd64.deb .
+        dpkg -x ./libzen0v5_*_amd64.xUbuntu_18.04.deb .
+        dpkg -x ./libmediainfo0v5_*_amd64.xUbuntu_18.04.deb .
+        dpkg -x ./mediainfo_*_amd64.xUbuntu_18.04.deb .
+        dpkg -x ./rclone-beta-latest-linux-amd64.deb .
+        tar xf './ffmpeg-release-amd64-static.tar.xz'
+        mv ./ffmpeg*/ffmpeg ./ffmpeg*/ffprobe ./ffmpeg*/qt-faststart ./usr/bin/
+        mv ./ffmpeg*/manpages/* ./usr/share/man/man1/
+        mv ./ffmpeg*/model ./usr/share/
+        rm -rf ./ffmpeg* ./*.tar.xz ./*.deb ./*.tmp
+
+    - name: Compile New Release
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      shell: bash
+      run: |
+        zip -r -q "rFFmedia.zip" "./usr/"
+        rm -rf ./usr
+        echo '{' > ./rFFmedia/VERSION.json
+        echo '    "FFmpeg": "'"$FFMPEG_VERSION_LATEST"'",' >> ./rFFmedia/VERSION.json
+        echo '    "MediaInfo": "'"$MEDIAINFO_VERSION_LATEST"'",' >> ./rFFmedia/VERSION.json
+        echo '    "rClone": "'"$RCLONE_VERSION_LATEST"'",' >> ./rFFmedia/VERSION.json
+        echo '    "rFFmedia": "'"$LATEST_BUILD_VERSION"'"' >> ./rFFmedia/VERSION.json
+        echo '}' >> ./rFFmedia/VERSION.json
+
+    - name: Commit Changes
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      uses: EndBug/add-and-commit@v7.2.0
+      env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        add: './VERSION.json'
+        author_name: Inspector William Henderson
+        author_email: InspectorWilliamHenderson@gmail.com
+        branch: main
+        cwd: './rFFmedia'
+        default_author: user_info
+        message: 'Release v${{ env.LATEST_BUILD_VERSION }}'
+        push: true
+        signoff: true
+        tag: 'v${{ env.LATEST_BUILD_VERSION }}'
+
+    - name: Create a Release
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      id: create_release
+      uses: actions/create-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: 'v${{ env.LATEST_BUILD_VERSION }}'
+        release_name: 'v${{ env.LATEST_BUILD_VERSION }}'
+        draft: false
+        prerelease: false
+
+    - name: Upload a Release
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      id: upload-release-asset 
+      uses: actions/upload-release-asset@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ steps.create_release.outputs.upload_url }}
+        asset_path: './rFFmedia.zip'
+        asset_name: 'rFFmedia.zip'
+        asset_content_type: application/zip
+
+    - name: Tag Release as Latest
+      if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
+      uses: eregon/publish-release@v1
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        release_id: ${{ steps.create_release.outputs.id }}
