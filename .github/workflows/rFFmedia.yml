@@ -24,7 +24,7 @@ jobs:
         rm -rf rclone-*-linux-amd64 rclone-beta-latest-linux-amd64.zip
 
     - name: Clone GitHub Repo
-      uses: actions/checkout@master
+      uses: actions/checkout@main
       with:
         path: 'rFFmedia'
 
@@ -111,7 +111,7 @@ jobs:
 
     - name: Commit Changes
       if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
-      uses: EndBug/add-and-commit@v7.2.0
+      uses: EndBug/add-and-commit@master
       env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -129,7 +129,7 @@ jobs:
     - name: Create a Release
       if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
       id: create_release
-      uses: actions/create-release@v1
+      uses: actions/create-release@main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -141,7 +141,7 @@ jobs:
     - name: Upload a Release
       if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
       id: upload-release-asset 
-      uses: actions/upload-release-asset@v1
+      uses: actions/upload-release-asset@main
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -152,7 +152,7 @@ jobs:
 
     - name: Tag Release as Latest
       if: ${{ env.LATEST_BUILD_VERSION != env.CURRENT_BUILD_VERSION }}
-      uses: eregon/publish-release@v1
+      uses: eregon/publish-release@master
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
